@@ -30,6 +30,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _iso(dt: datetime) -> str:
+    # SQLite 回放事件时拿到的是 naive datetime；统一按 UTC 归一化，
+    # 保证实时投影与事件重放产生的投影内容完全一致
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 def _append_event(
     db: Session,
     *,
@@ -85,22 +93,17 @@ def _apply_event_to_projection(proj: RunProjection | None, event: EventStore) ->
         raise DomainError("投影不存在，无法应用事件")
 
     if event.event_type == "MetricRecorded":
-        from app.MetricProjectionBypass import after_metric_skip, should_project_metric
-
-        if should_project_metric():
-            metrics = list(proj.metrics_json or [])
-            metrics.append(
-                {
-                    "name": payload["name"],
-                    "value": payload["value"],
-                    "step": payload["step"],
-                    "recorded_at": event.occurred_at.isoformat(),
-                    "actor": event.actor,
-                }
-            )
-            proj.metrics_json = metrics
-        else:
-            after_metric_skip(proj)
+        metrics = list(proj.metrics_json or [])
+        metrics.append(
+            {
+                "name": payload["name"],
+                "value": payload["value"],
+                "step": payload["step"],
+                "recorded_at": _iso(event.occurred_at),
+                "actor": event.actor,
+            }
+        )
+        proj.metrics_json = metrics
     elif event.event_type == "ArtifactAttached":
         artifacts = list(proj.artifacts_json or [])
         artifacts.append(
@@ -109,7 +112,7 @@ def _apply_event_to_projection(proj: RunProjection | None, event: EventStore) ->
                 "uri": payload["uri"],
                 "content_sha256": payload["content_sha256"].lower(),
                 "media_type": payload.get("media_type"),
-                "attached_at": event.occurred_at.isoformat(),
+                "attached_at": _iso(event.occurred_at),
                 "actor": event.actor,
             }
         )

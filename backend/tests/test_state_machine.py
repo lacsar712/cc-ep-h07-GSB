@@ -206,6 +206,45 @@ def test_projection_matches_event_replay(db):
     assert len(rebuilt.artifacts_json) == len(stored.artifacts_json)
 
 
+def test_record_metric_appends_to_projection(db):
+    run = start_run(
+        db,
+        actor="researcher",
+        project="p1",
+        name="n1",
+        dataset_content_sha256=sha("ds-metrics"),
+        code_commit_sha="abc1234",
+        description=None,
+    )
+    assert run.metrics_json == []
+
+    run = record_metric(
+        db,
+        run_id=run.id,
+        actor="researcher",
+        name="loss",
+        value=0.42,
+        step=7,
+        expected_version=run.version,
+    )
+
+    # 记一条后条数加一且字段正确
+    assert len(run.metrics_json) == 1
+    metric = run.metrics_json[-1]
+    assert metric["name"] == "loss"
+    assert metric["value"] == 0.42
+    assert metric["step"] == 7
+    assert metric["actor"] == "researcher"
+    assert metric["recorded_at"]
+
+    # 事件库与投影一致：重放事件得到相同指标列表（血缘汇总与详情同源）
+    events = list_events(db, run.id)
+    assert [e.event_type for e in events] == ["RunStarted", "MetricRecorded"]
+    rebuilt = rebuild_projection_from_events(db, run.id)
+    assert rebuilt is not None
+    assert rebuilt.metrics_json == run.metrics_json
+
+
 def test_cannot_command_before_start(db):
     missing = uuid4()
     with pytest.raises(DomainError):

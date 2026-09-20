@@ -85,22 +85,17 @@ def _apply_event_to_projection(proj: RunProjection | None, event: EventStore) ->
         raise DomainError("投影不存在，无法应用事件")
 
     if event.event_type == "MetricRecorded":
-        from app.MetricProjectionBypass import after_metric_skip, should_project_metric
-
-        if should_project_metric():
-            metrics = list(proj.metrics_json or [])
-            metrics.append(
-                {
-                    "name": payload["name"],
-                    "value": payload["value"],
-                    "step": payload["step"],
-                    "recorded_at": event.occurred_at.isoformat(),
-                    "actor": event.actor,
-                }
-            )
-            proj.metrics_json = metrics
-        else:
-            after_metric_skip(proj)
+        metrics = list(proj.metrics_json or [])
+        metrics.append(
+            {
+                "name": payload["name"],
+                "value": payload["value"],
+                "step": payload["step"],
+                "recorded_at": event.occurred_at.isoformat(),
+                "actor": event.actor,
+            }
+        )
+        proj.metrics_json = metrics
     elif event.event_type == "ArtifactAttached":
         artifacts = list(proj.artifacts_json or [])
         artifacts.append(
